@@ -1,0 +1,161 @@
+name: Auto Create PR from Branch
+
+# Triggers automatically when fix/* or feat/* branches are pushed
+on:
+  push:
+    branches:
+      - 'fix/**'
+      - 'feat/**'
+      - 'docs/**'
+      - 'test/**'
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  auto-create-pr:
+    # Skip if PR already exists for this branch
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract issue number from branch
+        id: extract
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          # Extract issue number from branch name like: fix/1-improve-total-memory-doc
+          ISSUE_NUM=$(echo $BRANCH | grep -oE '[0-9]+' | head -1)
+          ISSUE_TYPE=$(echo $BRANCH | cut -d'/' -f1)
+          
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "issue_num=$ISSUE_NUM" >> $GITHUB_OUTPUT
+          echo "issue_type=$ISSUE_TYPE" >> $GITHUB_OUTPUT
+          
+          if [ -z "$ISSUE_NUM" ]; then
+            echo "⚠️  No issue number found in branch name"
+            echo "Expected format: {type}/{issue-number}-{description}"
+            exit 1
+          fi
+          echo "✓ Extracted issue #$ISSUE_NUM from branch: $BRANCH"
+
+      - name: Check if PR already exists
+        id: check_pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = '${{ steps.extract.outputs.branch }}';
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              head: `${context.repo.owner}:${branch}`
+            });
+            
+            if (prs.data.length > 0) {
+              console.log(`✓ PR already exists: ${prs.data[0].html_url}`);
+              core.setOutput('exists', 'true');
+            } else {
+              console.log('✓ No existing PR found');
+              core.setOutput('exists', 'false');
+            }
+
+      - name: Create PR
+        if: steps.check_pr.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = '${{ steps.extract.outputs.branch }}';
+            const issueNum = '${{ steps.extract.outputs.issue_num }}';
+            const issueType = '${{ steps.extract.outputs.issue_type }}';
+            
+            // Build title from branch name
+            const branchParts = branch.split('/')[1].split('-');
+            const shortDesc = branchParts.slice(1).join(' ');
+            const typeMap = {
+              'fix': '[FIX]',
+              'feat': '[FEAT]',
+              'docs': '[DOCS]',
+              'test': '[TEST]',
+              'refactor': '[REFACTOR]'
+            };
+            const typePrefix = typeMap[issueType] || `[${issueType.toUpperCase()}]`;
+            const prTitle = `${typePrefix} ${shortDesc} (#${issueNum})`;
+
+            const prBody = `## Description
+Automated fix for issue #${issueNum}.
+
+## Related Issue
+Closes #${issueNum}
+
+## Type of Change
+- [x] Automated Issue Resolution
+- [ ] Manual Review Required
+
+## Changes Made
+See branch: \`${branch}\`
+
+## Validation Status
+- Issue #${issueNum} analysis: ✓
+- Code fix applied: ✓
+- Branch pushed: ✓
+- Auto validation: Pending (see GitHub Actions)
+
+## Next Steps
+GitHub Actions (\`solver-validation.yml\`) will:
+- ✓ Check code format (rustfmt)
+- ✓ Run linter (clippy)
+- ✓ Verify MSRV (1.95.0)
+- ✓ Test all features
+- ✓ Run test suite`;
+
+            try {
+              const response = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: prTitle,
+                body: prBody,
+                head: branch,
+                base: 'main',
+                draft: false,
+                maintainer_can_modify: true
+              });
+
+              console.log(`✅ PR #${response.data.number} created automatically`);
+              console.log(`URL: ${response.data.html_url}`);
+              core.setOutput('pr_number', response.data.number);
+              core.setOutput('pr_url', response.data.html_url);
+              
+              // Add labels based on type
+              const labels = ['automated'];
+              if (issueType === 'fix') labels.push('bug');
+              if (issueType === 'feat') labels.push('feature');
+              if (issueType === 'docs') labels.push('documentation');
+              
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: response.data.number,
+                labels: labels
+              });
+              
+              console.log(`✓ Labels added: ${labels.join(', ')}`);
+            } catch (error) {
+              console.error(`❌ Error creating PR: ${error.message}`);
+              process.exit(1);
+            }
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🤖 Auto PR Creation" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: ${{ steps.extract.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Issue: #${{ steps.extract.outputs.issue_num }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Type: ${{ steps.extract.outputs.issue_type }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check_pr.outputs.exists }}" == "true" ]; then
+            echo "- Status: ⏭️ PR already exists" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.create_pr.outcome }}" == "success" ]; then
+            echo "- Status: ✅ PR created" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next: \`solver-validation.yml\` will run automatically to validate the PR" >> $GITHUB_STEP_SUMMARY

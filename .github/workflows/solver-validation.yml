@@ -176,7 +176,7 @@ jobs:
   validation_summary:
     name: Validation Summary
     runs-on: ubuntu-latest
-    needs: [validate_format, validate_lint, validate_msrv, validate_features, validate_tests]
+    needs: [validate_format, validate_lint, validate_msrv, validate_features]
     if: always()
     
     steps:
@@ -186,13 +186,11 @@ jobs:
           lint_status=${{ needs.validate_lint.result }}
           msrv_status=${{ needs.validate_msrv.result }}
           features_status=${{ needs.validate_features.result }}
-          tests_status=${{ needs.validate_tests.result }}
           
           echo "Format: $format_status"
           echo "Lint: $lint_status"
           echo "MSRV: $msrv_status"
           echo "Features: $features_status"
-          echo "Tests: $tests_status"
       
       - name: Comment validation summary on PR
         uses: actions/github-script@v7
@@ -202,18 +200,47 @@ jobs:
             const lint = '${{ needs.validate_lint.result }}' === 'success' ? '✅' : '❌';
             const msrv = '${{ needs.validate_msrv.result }}' === 'success' ? '✅' : '❌';
             const features = '${{ needs.validate_features.result }}' === 'success' ? '✅' : '❌';
-            const tests = '${{ needs.validate_tests.result }}' === 'success' ? '✅' : '❌';
             
-            const allPass = [format, lint, msrv, features, tests].every(s => s === '✅');
-            const status = allPass ? '✅ **READY FOR REVIEW**' : '⚠️ **FIXES NEEDED**';
+            const quickChecksPass = [format, lint, msrv, features].every(s => s === '✅');
+            const status = quickChecksPass ? '✅ **QUICK CHECKS PASSED**' : '⚠️ **FIXES NEEDED**';
             
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `## ${status}\n\n| Check | Status |\n|-------|--------|\n| Format | ${format} |\n| Lint (clippy) | ${lint} |\n| MSRV (1.95) | ${msrv} |\n| Features | ${features} |\n| Tests | ${tests} |\n\n${allPass ? '🎉 All validation checks passed! This PR is ready for human review.' : '⚠️ Please fix validation errors above.'}`
+              body: `## ${status}\n\n| Check | Status |\n|-------|--------|\n| Format | ${format} |\n| Lint (clippy) | ${lint} |\n| MSRV (1.95) | ${msrv} |\n| Features | ${features} |\n\n${quickChecksPass ? '⏳ Full test suite is running on platform matrix (macOS, Ubuntu, Windows).\n\n🎉 Quick validation passed! Waiting for test suite completion...' : '⚠️ Please fix validation errors above before tests run.'}`
             })
       
-      - name: Fail if any check failed
-        if: needs.validate_format.result != 'success' || needs.validate_lint.result != 'success' || needs.validate_msrv.result != 'success' || needs.validate_features.result != 'success' || needs.validate_tests.result != 'success'
+      - name: Fail if quick checks failed
+        if: needs.validate_format.result != 'success' || needs.validate_lint.result != 'success' || needs.validate_msrv.result != 'success' || needs.validate_features.result != 'success'
+        run: exit 1
+  
+  tests_summary:
+    name: Test Suite Summary
+    runs-on: ubuntu-latest
+    needs: [validate_tests]
+    if: always()
+    
+    steps:
+      - name: Check test results
+        run: |
+          tests_status=${{ needs.validate_tests.result }}
+          echo "Tests: $tests_status"
+      
+      - name: Comment test summary on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tests = '${{ needs.validate_tests.result }}' === 'success' ? '✅' : '❌';
+            const status = tests === '✅' ? '✅ **ALL TESTS PASSED**' : '❌ **TESTS FAILED**';
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ${status}\n\n| Check | Status |\n|-------|--------|\n| Tests (macOS/Ubuntu/Windows) | ${tests} |\n\n${tests === '✅' ? '🎉 **ALL VALIDATION COMPLETE** - This PR is ready for review!' : '⚠️ Test failures detected. Please review the logs.'}`
+            })
+      
+      - name: Fail if tests failed
+        if: needs.validate_tests.result != 'success'
         run: exit 1
