@@ -525,7 +525,7 @@ impl System {
         self.inner.cpus()
     }
 
-    /// Returns the RAM size in bytes.
+    /// Returns the total system memory (RAM) in bytes.
     ///
     /// ```no_run
     /// use sysinfo::System;
