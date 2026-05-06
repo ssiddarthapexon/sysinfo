@@ -1,0 +1,219 @@
+name: Solver Validation - Check Generated Code
+
+on:
+  pull_request:
+    branches: [main]
+    # Only run on PRs created by the solver
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+
+jobs:
+  validate_format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
+      
+      - name: Check formatting
+        run: cargo fmt -- --check
+      
+      - name: Comment on PR if formatting fails
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **Format Check Failed**\n\nRun \`cargo fmt\` locally to fix formatting issues.\n\nCommand:\n\`\`\`bash\ncargo fmt\n\`\`\``
+            })
+
+  validate_lint:
+    name: Clippy Check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          components: clippy
+      
+      - name: Run clippy
+        run: |
+          cargo clippy --all-targets --features serde -- -D warnings
+          cargo clippy --all-targets --features multithread -- -D warnings
+      
+      - name: Comment on PR if clippy fails
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **Clippy Check Failed on ${{ matrix.os }}**\n\nFix clippy warnings:\n\n\`\`\`bash\ncargo clippy --fix\n\`\`\``
+            })
+
+  validate_msrv:
+    name: MSRV Check (1.95.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      
+      - name: Check MSRV compatibility
+        run: cargo check
+      
+      - name: Comment on PR if MSRV fails
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **MSRV Check Failed**\n\nCode is not compatible with Rust 1.95.0 (minimum supported version).\n\nPlease use only stable Rust 1.95 features.`
+            })
+
+  validate_features:
+    name: Feature Combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      
+      - name: Check default features
+        run: cargo check
+      
+      - name: Check no-default-features
+        run: cargo check --no-default-features
+      
+      - name: Check serde feature
+        run: cargo check --features serde
+      
+      - name: Check debug feature
+        run: cargo check --features debug
+      
+      - name: Check debug+serde
+        run: cargo check --features debug,serde
+      
+      - name: Check apple-sandbox (required for App Store)
+        run: cargo check --features apple-sandbox
+      
+      - name: Comment on PR if feature check fails
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **Feature Combination Check Failed**\n\nOne or more feature combinations don't compile.\n\nTest locally with:\n\`\`\`bash\ncargo check --no-default-features\ncargo check --features serde\ncargo check --features debug\n\`\`\``
+            })
+
+  validate_tests:
+    name: Unit Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [1.95.0, stable]
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      
+      - name: Run tests (Linux/Windows)
+        if: matrix.os != 'macos-latest'
+        run: |
+          cargo test --all
+          cargo test --no-default-features
+          cargo test --features serde --doc
+        env:
+          RUST_BACKTRACE: full
+      
+      - name: Run tests (macOS - single threaded)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cargo test --all -- --test-threads 1
+          cargo test --no-default-features -- --test-threads 1
+          cargo test --features serde --doc -- --test-threads 1
+        env:
+          RUST_BACKTRACE: full
+          APPLE_CI: 1
+      
+      - name: Comment on PR if tests fail
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ **Tests Failed on ${{ matrix.os }} (Rust ${{ matrix.toolchain }})**\n\nRun tests locally:\n\n\`\`\`bash\ncargo test\n\`\`\``
+            })
+
+  validation_summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [validate_format, validate_lint, validate_msrv, validate_features, validate_tests]
+    if: always()
+    
+    steps:
+      - name: Check validation results
+        run: |
+          format_status=${{ needs.validate_format.result }}
+          lint_status=${{ needs.validate_lint.result }}
+          msrv_status=${{ needs.validate_msrv.result }}
+          features_status=${{ needs.validate_features.result }}
+          tests_status=${{ needs.validate_tests.result }}
+          
+          echo "Format: $format_status"
+          echo "Lint: $lint_status"
+          echo "MSRV: $msrv_status"
+          echo "Features: $features_status"
+          echo "Tests: $tests_status"
+      
+      - name: Comment validation summary on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const format = '${{ needs.validate_format.result }}' === 'success' ? '✅' : '❌';
+            const lint = '${{ needs.validate_lint.result }}' === 'success' ? '✅' : '❌';
+            const msrv = '${{ needs.validate_msrv.result }}' === 'success' ? '✅' : '❌';
+            const features = '${{ needs.validate_features.result }}' === 'success' ? '✅' : '❌';
+            const tests = '${{ needs.validate_tests.result }}' === 'success' ? '✅' : '❌';
+            
+            const allPass = [format, lint, msrv, features, tests].every(s => s === '✅');
+            const status = allPass ? '✅ **READY FOR REVIEW**' : '⚠️ **FIXES NEEDED**';
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ${status}\n\n| Check | Status |\n|-------|--------|\n| Format | ${format} |\n| Lint (clippy) | ${lint} |\n| MSRV (1.95) | ${msrv} |\n| Features | ${features} |\n| Tests | ${tests} |\n\n${allPass ? '🎉 All validation checks passed! This PR is ready for human review.' : '⚠️ Please fix validation errors above.'}`
+            })
+      
+      - name: Fail if any check failed
+        if: needs.validate_format.result != 'success' || needs.validate_lint.result != 'success' || needs.validate_msrv.result != 'success' || needs.validate_features.result != 'success' || needs.validate_tests.result != 'success'
+        run: exit 1
