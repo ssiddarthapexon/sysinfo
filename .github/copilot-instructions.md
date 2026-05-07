@@ -2,27 +2,25 @@
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
 
-**Current Feature**: Process Data Integrity During Termination
-**Plan**: docs/001-process-data-integrity/plan.md
-**Specification**: docs/001-process-data-integrity/spec.md
+**Current Feature**: Fix Product Example in simple.rs
+**Plan**: docs/002-product-example-fix/plan.md
+**Specification**: docs/002-product-example-fix/spec.md
 
 **Key Context**:
 - Rust crate for cross-platform system information retrieval
-- Fixing bug where process termination causes data loss
-- Adding status tracking APIs (is_data_complete, is_alive, last_refreshed)
-- Platform-specific implementations: Linux, macOS, Windows, BSD
-- Must preserve existing data when process terminates (don't overwrite with defaults)
+- Fixing example bug where Product type prints instead of product data
+- Example demonstrates correct Product API usage (static methods)
+- Platform-specific handling: SKU not available on macOS
+- Output displays hardware product name, family, version, serial, UUID, vendor, SKU
 
 **Important Files**:
-- src/common/system.rs - Process public API
-- src/unix/linux/process.rs - Linux implementation
-- src/unix/apple/macos/process.rs - macOS implementation  
-- src/windows/process.rs - Windows implementation
-- src/unix/bsd/*/process.rs - BSD implementations
+- examples/simple.rs - Example file with the bug (line 340)
+- src/common/system.rs - Product API definition (lines 1045-1170)
+- docs/002-product-example-fix/ - Feature documentation
 
 **Design Artifacts**:
-- Research: docs/001-process-data-integrity/research.md
-- Data Model: docs/001-process-data-integrity/data-model.md
-- API Contracts: docs/001-process-data-integrity/contracts/api.md
-- Quickstart: docs/001-process-data-integrity/quickstart.md
+- Research: docs/002-product-example-fix/research.md
+- Data Model: docs/002-product-example-fix/data-model.md
+- API Contracts: docs/002-product-example-fix/contracts/api.md
+- Quickstart: docs/002-product-example-fix/quickstart.md
 <!-- SPECKIT END -->

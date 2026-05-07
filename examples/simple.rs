@@ -337,7 +337,29 @@ fn interpret_input(
             None => println!("No motherboard information available"),
         },
         "product" => {
-            println!("{:#?}", Product);
+            println!("Product Information:");
+            if let Some(name) = Product::name() {
+                println!("  Name: {}", name);
+            }
+            if let Some(family) = Product::family() {
+                println!("  Family: {}", family);
+            }
+            if let Some(version) = Product::version() {
+                println!("  Version: {}", version);
+            }
+            if let Some(serial) = Product::serial_number() {
+                println!("  Serial Number: {}", serial);
+            }
+            if let Some(uuid) = Product::uuid() {
+                println!("  UUID: {}", uuid);
+            }
+            if let Some(vendor) = Product::vendor_name() {
+                println!("  Vendor: {}", vendor);
+            }
+            #[cfg(not(target_os = "macos"))]
+            if let Some(sku) = Product::stock_keeping_unit() {
+                println!("  SKU: {}", sku);
+            }
         }
         e => {
             println!(
