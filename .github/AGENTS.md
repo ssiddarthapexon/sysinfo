@@ -188,16 +188,38 @@ Identifies and validates the Git remote repository URL.
 
 ---
 
+### `/pr`
+**Commit changes and raise pull request**
+
+Stages all changes, creates commit, pushes to origin, and generates/creates a pull request with rich body from spec/plan/tasks artifacts.
+
+- **Input**: Implementation changes (uncommitted files)
+- **Output**: Git commit on feature branch, pushed to origin, PR created (or pr-body.md generated)
+- **Prerequisites**: Must be on feature branch (not main/master)
+- **Arguments**:
+  - `--draft` — Create as draft PR
+  - `--title <title>` — Override auto-generated title
+  - `--assignee <handle>` — Assign to GitHub user
+  - `--label <label>` — Add labels (repeatable)
+  - `--no-push` — Generate PR body only, skip git operations
+  - `--base <branch>` — Override base branch (default: main)
+- **Next Steps**: Code review, address feedback, merge
+- **Requirements**: GitHub CLI (gh) for full functionality, or use `--no-push` for manual URL
+- **Time to run**: 2-5 minutes
+- **Note**: If gh CLI unavailable, generates manual PR URL via GitHub's compare interface
+
+---
+
 ## Recommended Workflow Sequences
 
 ### **Full Feature Development**
 ```
-/git.feature → /specify → /clarify → /plan → /tasks → /analyze → /implement → /git.commit
+/git.feature → /specify → /clarify → /plan → /tasks → /analyze → /implement → /pr
 ```
 
 ### **Quick Feature** (skip clarification)
 ```
-/specify → /plan → /tasks → /analyze → /implement → /git.commit
+/specify → /plan → /tasks → /analyze → /implement → /pr
 ```
 
 ### **Specification-Only** (planning phase)
@@ -208,6 +230,11 @@ Identifies and validates the Git remote repository URL.
 ### **Analysis & Refinement**
 ```
 /analyze (review artifacts) → /checklist (validation) → /plan (adjust if needed)
+```
+
+### **Review & Submit**
+```
+/implement (complete work) → /pr --no-push (preview PR body) → /pr (commit, push, create PR)
 ```
 
 ---
